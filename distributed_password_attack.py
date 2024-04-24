@@ -1,6 +1,7 @@
 import pandas as pd
 from mpi4py import MPI
 
+
 def main():
     # Initialize MPI
     comm = MPI.COMM_WORLD
@@ -10,9 +11,7 @@ def main():
     # Define CSV file and chunk size
     filename = '10millionPasswords.csv'
     chunk_size = 1000
-    target_password = '1212'  # Define the target password
-
-    found_password = False
+    target_password = 'sara'
 
     if rank == 0:
         # Read CSV file in master process
@@ -45,14 +44,13 @@ def main():
 
                 # Process chunk data
                 if target_password in chunk_data['password'].values:
-                    found_password = True
                     print(f"Password found in process {rank}!")
-                    for i in range(size):
-                        comm.send(True, dest=i, tag=0)
+                    comm.send(True, dest=0, tag=0)
                     break
 
             elif status.Get_tag() == 0:
                 break  # Receive termination signal
+
 
 if __name__ == "__main__":
     main()
