@@ -1,5 +1,6 @@
 import pandas as pd
 from mpi4py import MPI
+import hashlib
 
 
 def main():
@@ -11,7 +12,9 @@ def main():
     # Define CSV file and chunk size
     filename = '10millionPasswords.csv'
     chunk_size = 1000
-    target_password = 'sara'
+    target_password = 'b6696cdb7a6ad64f13d7dad2e284116cc32c904a9ff0a9a5722da44cf7346d2e'
+    salt = 'salt'
+
 
     if rank == 0:
         # Read CSV file in master process
@@ -42,11 +45,12 @@ def main():
                 if chunk_data is None:
                     break
 
-                # Process chunk data
-                if target_password in chunk_data['password'].values:
-                    print(f"Password found in process {rank}!")
-                    comm.send(True, dest=0, tag=0)
-                    break
+                for password in chunk_data['password'].values:
+                    computed_hash = hashlib.sha256((str(password) + salt).encode()).hexdigest()
+                    if computed_hash == target_password:
+                        print(f"Password found by process {rank}: {password}")
+                        comm.send(True, dest=0, tag=0)
+                        break
 
             elif status.Get_tag() == 0:
                 break  # Receive termination signal
