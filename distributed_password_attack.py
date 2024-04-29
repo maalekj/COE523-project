@@ -15,7 +15,7 @@ def main():
     # Define CSV file and chunk size
     filename = '10millionPasswords.csv'
     chunk_size = 1000
-    target_password = 'b51be2abaaaa125f2ac7458be8161230ddf8246917115684272c0745275401cf'
+    target_password = 'b51be2abaaaa125f2ac7458be8161230ddf8246917115684272c0745275401cf'  # Hash of 'ybrbnfrekmysq'
     salt = 'salt'
 
     if rank == 0:
@@ -85,6 +85,7 @@ def main():
                 print(f"Failure in process {rank}, notifying master.")
                 comm.send(f"Process {rank} failed", dest=0, tag=77)
                 break
+
 
 if __name__ == "__main__":
     main()
