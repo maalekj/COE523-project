@@ -1,8 +1,17 @@
 import pandas as pd
 from mpi4py import MPI
 import hashlib
+import time
+import argparse
 
-def main():
+def get_hash_function(algorithm_name):
+    """Returns a hash function from hashlib based on the given algorithm name."""
+    try:
+        return getattr(hashlib, algorithm_name)
+    except AttributeError:
+        raise ValueError(f"Unsupported hash algorithm: {algorithm_name}")
+
+def main(target_password, salt, is_hashed, hash_algorithm):
     # Initialize MPI
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -13,12 +22,19 @@ def main():
     MPI.COMM_WORLD.Set_errhandler(errhandler)
 
     # Define CSV file and chunk size
-    filename = '10millionPasswords.csv'
+    filename = 'passwords.csv'
     chunk_size = 1000
-    target_password = 'b51be2abaaaa125f2ac7458be8161230ddf8246917115684272c0745275401cf'  # Hash of 'ybrbnfrekmysq'
-    salt = 'salt'
+
+    # Get hash function based on user input
+    hash_func = get_hash_function(hash_algorithm)
+
+    # Check if password needs hashing
+    if not is_hashed:
+        target_password = hash_func((target_password + salt).encode()).hexdigest()
 
     if rank == 0:
+        start_time = time.time()  # Start timing
+
         # Read CSV file in master process
         chunks = pd.read_csv(filename, chunksize=chunk_size)
         task_queue = list(enumerate(chunks))  # Create a queue of (index, chunk) pairs
@@ -43,14 +59,17 @@ def main():
 
             # Check for completed tasks or process failures
             status = MPI.Status()
+
             flag = comm.Iprobe(source=MPI.ANY_SOURCE, tag=201, status=status)
+            result = comm.Iprobe(source=MPI.ANY_SOURCE, tag=200)
             if flag:
-                result = comm.Iprobe(source=status.source, tag=200)
                 if result:
                     print(f"Password found! Stopping all processes.")
                     break
 
             failed_flag = comm.Iprobe(source=MPI.ANY_SOURCE, tag=77, status=status)
+            if status.source in failed_processes:
+                continue
             if failed_flag:
                 if status.source not in failed_processes:
                     failed_process = status.source
@@ -61,21 +80,24 @@ def main():
         for i in range(1, size):
             comm.send(None, dest=i, tag=1)
 
+        end_time = time.time()  # End timing
+        print(f"Total execution time: {end_time - start_time} seconds")
+
     else:
         while True:
             try:
                 chunk_data = comm.recv(source=0, tag=MPI.ANY_TAG, status=MPI.Status())
-                if rank == 2:
-                    raise Exception("Simulated failure")
                 if chunk_data is None:
                     break
 
+                # if rank == 3:
+                #     raise Exception("Simulating process failure")
+
                 for password in chunk_data['password'].values:
-                    computed_hash = hashlib.sha256((str(password) + salt).encode()).hexdigest()
+                    computed_hash = hash_func((str(password) + salt).encode()).hexdigest()
                     if computed_hash == target_password:
                         print(f"Password found by process {rank}: {password}")
                         comm.send(True, dest=0, tag=200)
-                        return  # Exit after finding the password
 
                 # Notify master the task is done
                 comm.send(True, dest=0, tag=201)
@@ -84,8 +106,13 @@ def main():
                 # Handle MPI exceptions, mark the process for failure
                 print(f"Failure in process {rank}, notifying master.")
                 comm.send(f"Process {rank} failed", dest=0, tag=77)
-                break
-
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="MPI-based Password Checker")
+    parser.add_argument('target_password', type=str, help='Target password hash or plaintext')
+    parser.add_argument('salt', type=str, help='Salt to be used for hashing')
+    parser.add_argument('--is_hashed', action='store_true', help='Flag to indicate if the target password is already hashed')
+    parser.add_argument('--hash_algorithm', default='sha256', type=str, help='Hash algorithm to use (e.g., sha256, md5, sha1)')
+    args = parser.parse_args()
+
+    main(args.target_password, args.salt, args.is_hashed, args.hash_algorithm)
